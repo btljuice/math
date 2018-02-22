@@ -320,6 +320,13 @@ def display_scores(scores):
     print("Standard deviation: ", scores.std())
 
 
+def printSortedSearchCVResults(g):
+    cvres = g.cv_results_
+    for mean_score, params in sorted(
+            zip(cvres["mean_test_score"], cvres["params"])):
+        print(np.sqrt(-mean_score), params)
+
+
 # 1. Loads the dataset
 housing = load_housing_data()
 
@@ -551,6 +558,7 @@ forest_rmse_scores = np.sqrt(-forest_scores)
 display_scores(forest_rmse_scores)
 # Author's note: A training set rmse much lower than the values in a k-fold
 # cross-validation could be a tell-tale sign of overfitting
+pass
 
 # 9. Serializing a model.
 # Saving our 'state-of-the-art'/'mind blowing' linear regression model
@@ -559,9 +567,14 @@ from sklearn.externals import joblib
 joblib.dump(lin_reg, "lin_reg.pkl")
 lin_reg_loaded = joblib.load("lin_reg.pkl")
 
-#9. Hyperparameter training using GridSearchCV
+#10. Hyperparameter training using GridSearchCV.
+# GridSearchCV will train the model over all possible combinations of
+# the parameters grids defined in each dictionary in 'param_grid'
+# 1st grid : 3 x 4 = 12 combinations
+# 2nd grid : 3 x 2 = 6 combinations
+# cv = 5 : 5 k-fold
+# Thus : (12 + 6)*5 = 90 trainings.
 from sklearn.model_selection import GridSearchCV
-
 param_grid = [
     {
         'n_estimators': [3, 10, 30],
@@ -575,5 +588,59 @@ param_grid = [
 ]
 forest_reg = RandomForestRegressor()
 grid_search = GridSearchCV(
-    forest_reg, param_grid, cv=5, scoring='neg_mean_squared_error')
+    forest_reg, param_grid, cv=5, scoring='neg_mean_squared_error',
+    refit=True)  # 'refit' will retrain on the whole training set after the
+# best estimator is found
 grid_search.fit(housing_prepared, housing_labels)
+
+print(grid_search.best_params_, '\n')
+print(grid_search.best_estimator_, '\n')
+printSortedSearchCVResults(grid_search)
+# Author's note:
+# * Best params are the max. values. We could search with even higher values
+# * If hyperparameter space is too big, RandomizedSearchCV exists too.
+pass
+
+# 10. Hyperparameter RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV
+from scipy.stats import randint
+param_distribs = {
+    'n_estimators': randint(low=1, high=200),
+    'max_features': randint(low=1, high=8),
+}
+forest_reg = RandomForestRegressor(random_state=42)
+rnd_search = RandomizedSearchCV(
+    forest_reg,
+    param_distributions=param_distribs,
+    n_iter=1,
+    cv=5,
+    scoring='neg_mean_squared_error',
+    random_state=42)
+rnd_search.fit(housing_prepared, housing_labels)
+print(rnd_search.best_params_, '\n')
+print(rnd_search.best_estimator_, '\n')
+printSortedSearchCVResults(rnd_search)
+
+# 11. Best model analysis
+feature_importances = grid_search.best_estimator_.feature_importances_
+extra_attribs = ["rooms_per_hhold", "pop_per_hhold", "bedrooms_per_room"]
+cat_encoder = cat_pipeline.named_steps["cat_encoder"]
+cat_one_hot_attribs = list(cat_encoder.categories_[0])
+attributes = num_attribs + extra_attribs + cat_one_hot_attribs
+sorted(zip(feature_importances, attributes), reverse=True)
+# Author's note: Look at specific errors your model makes. Try to understand
+#                what could fix the problem (adding extra features or removing
+# uninformative/noisy ones, cleaning outliers, etc.)
+
+# Evaluate on the test set
+final_model = grid_search.best_estimator_
+X_test = strat_test_set.drop("median_house_value", axis=1)
+y_test = strat_test_set["median_house_value"].copy()
+X_test_prepared = full_pipeline.transform(X_test)
+final_predictions = final_model.predict(X_test_prepared)
+final_mse = mean_squared_error(y_test, final_predictions)
+final_rmse = np.sqrt(final_mse)
+# Author's note: Resist the temptation to tweak further. It is normal to do
+# slightly worse than on the training/validation set. On the other hand,
+# if your model does not do good, it is likely that it does not generalize well.
+# This is where we assess if the model generalizes well, with unseen data.
