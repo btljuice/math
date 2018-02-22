@@ -10,6 +10,8 @@ from sklearn.preprocessing import LabelEncoder, OneHotEncoder, LabelBinarizer
 from sklearn.preprocessing import Imputer, StandardScaler
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
 from pandas.plotting import scatter_matrix
 from sklearn.utils import check_array
 from scipy import sparse
@@ -23,8 +25,6 @@ rooms_ix, bedrooms_ix, population_ix, household_ix = 3, 4, 5, 6
 
 # Definition of the CategoricalEncoder class, copied from PR #9151.
 # Just run this cell, or copy it to your code, do not try to understand it (yet).
-
-
 class CategoricalEncoder(BaseEstimator, TransformerMixin):
     """Encode categorical features as a numeric array.
     The input to this transformer should be a matrix of integers or strings,
@@ -473,3 +473,32 @@ full_pipeline = FeatureUnion(transformer_list=[
 housing_num = num_pipeline.fit_transform(housing)
 housing_cat = cat_pipeline.fit_transform(housing)
 housing_prepared = full_pipeline.fit_transform(housing)
+
+# 8 Training linear regression model
+lin_reg = LinearRegression()
+lin_reg.fit(housing_prepared, housing_labels)
+
+# 9 Look how fare's some fitted data
+some_data = housing.iloc[:5]
+some_labels = housing_labels.iloc[:5]
+some_data_prepared = full_pipeline.transform(some_data)
+print("Predictions: ", lin_reg.predict(some_data_prepared))
+print ("Labels: ", list(some_labels))
+
+# 10 Measure mean_squared error
+housing_predictions = lin_reg.predict(housing_prepared)
+lin_mse = mean_squared_error(housing_labels, housing_predictions)
+lin_rmse = np.sqrt(lin_mse)
+# Author's note. The model rmse is $68k dollars, clearly unacceptable.
+# This is an example of underfitting
+
+# Trying a more powerful model
+from sklearn.tree import DecisionTreeRegressor
+tree_reg = DecisionTreeRegressor()
+tree_reg.fit(housing_prepared, housing_labels)
+
+# Look at this new model rmse
+housing_predictions = tree_reg.predict(housing_prepared)
+tree_mse = mean_squared_error(housing_labels, housing_predictions)
+tree_rmse = np.sqrt(tree_mse)
+# Author's note. Here it is the opposite, the model overfits the data
