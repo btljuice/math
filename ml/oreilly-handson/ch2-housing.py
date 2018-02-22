@@ -474,25 +474,25 @@ housing_num = num_pipeline.fit_transform(housing)
 housing_cat = cat_pipeline.fit_transform(housing)
 housing_prepared = full_pipeline.fit_transform(housing)
 
-# 8 Training linear regression model
+# 8.L Training linear regression model
 lin_reg = LinearRegression()
 lin_reg.fit(housing_prepared, housing_labels)
 
-# 9 Look how fare's some fitted data
+# Look how fare's some fitted data
 some_data = housing.iloc[:5]
 some_labels = housing_labels.iloc[:5]
 some_data_prepared = full_pipeline.transform(some_data)
 print("Predictions: ", lin_reg.predict(some_data_prepared))
 print ("Labels: ", list(some_labels))
 
-# 10 Measure mean_squared error
+# Measure mean_squared error
 housing_predictions = lin_reg.predict(housing_prepared)
 lin_mse = mean_squared_error(housing_labels, housing_predictions)
 lin_rmse = np.sqrt(lin_mse)
 # Author's note. The model rmse is $68k dollars, clearly unacceptable.
 # This is an example of underfitting
 
-# Trying a more powerful model
+# 8.T Trying a more powerful model
 from sklearn.tree import DecisionTreeRegressor
 tree_reg = DecisionTreeRegressor()
 tree_reg.fit(housing_prepared, housing_labels)
