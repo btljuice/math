@@ -23,6 +23,7 @@ HOUSING_URL = DOWNLOAD_ROOT + "datasets/housing/housing.tgz"
 # Transformer mixin
 rooms_ix, bedrooms_ix, population_ix, household_ix = 3, 4, 5, 6
 
+
 # Definition of the CategoricalEncoder class, copied from PR #9151.
 # Just run this cell, or copy it to your code, do not try to understand it (yet).
 class CategoricalEncoder(BaseEstimator, TransformerMixin):
@@ -313,6 +314,12 @@ def encode_1hot_manual(data):
     return encoder.fit_transform(data_encoded.reshape(-1, 1))
 
 
+def display_scores(scores):
+    print("Scores: ", scores)
+    print("Mean: ", scores.mean())
+    print("Standard deviation: ", scores.std())
+
+
 # 1. Loads the dataset
 housing = load_housing_data()
 
@@ -360,7 +367,6 @@ split = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
 for train_index, test_index in split.split(housing, housing["income_cat"]):
     strat_train_set = housing.loc[train_index]
     strat_test_set = housing.loc[test_index]
-
 verify_stratified_split(housing)
 verify_stratified_split(strat_train_set)
 verify_stratified_split(strat_test_set)
@@ -421,6 +427,8 @@ pass
 pass
 
 # 7 Start Again: It cleanup time!
+# Supervised learning: use housing as input parameters
+# and housing_labels as the output to predict
 housing = strat_train_set.drop("median_house_value", axis=1)
 housing_labels = strat_train_set["median_house_value"].copy()
 
@@ -462,10 +470,9 @@ num_pipeline = Pipeline([
     ('attribs_adder', CombinedAttributesAdder()),
     ('std_scaler', StandardScaler()),
 ])
-cat_pipeline = Pipeline([
-    ('selector', DataFrameSelector(cat_attribs)),
-    ('cat_encoder', CategoricalEncoder(encoding="onehot-dense"))
-])
+cat_pipeline = Pipeline([('selector', DataFrameSelector(cat_attribs)),
+                         ('cat_encoder',
+                          CategoricalEncoder(encoding="onehot-dense"))])
 full_pipeline = FeatureUnion(transformer_list=[
     ("num_pipeline", num_pipeline),
     ("cat_pipeline", cat_pipeline),
@@ -477,28 +484,96 @@ housing_prepared = full_pipeline.fit_transform(housing)
 # 8.L Training linear regression model
 lin_reg = LinearRegression()
 lin_reg.fit(housing_prepared, housing_labels)
-
 # Look how fare's some fitted data
 some_data = housing.iloc[:5]
 some_labels = housing_labels.iloc[:5]
 some_data_prepared = full_pipeline.transform(some_data)
 print("Predictions: ", lin_reg.predict(some_data_prepared))
-print ("Labels: ", list(some_labels))
-
+print("Labels: ", list(some_labels))
 # Measure mean_squared error
 housing_predictions = lin_reg.predict(housing_prepared)
 lin_mse = mean_squared_error(housing_labels, housing_predictions)
 lin_rmse = np.sqrt(lin_mse)
-# Author's note. The model rmse is $68k dollars, clearly unacceptable.
+# Author's note. The model rmse is $68k dollars, compared to $200k houses.
 # This is an example of underfitting
+pass
 
-# 8.T Trying a more powerful model
+# 8.T Training a decision tree regressor model
 from sklearn.tree import DecisionTreeRegressor
 tree_reg = DecisionTreeRegressor()
 tree_reg.fit(housing_prepared, housing_labels)
-
 # Look at this new model rmse
 housing_predictions = tree_reg.predict(housing_prepared)
 tree_mse = mean_squared_error(housing_labels, housing_predictions)
 tree_rmse = np.sqrt(tree_mse)
 # Author's note. Here it is the opposite, the model overfits the data
+pass
+
+# 8.T.K-fold : Use the K-Fold cross-validation technique
+# to train the decision tree regressor model
+from sklearn.model_selection import cross_val_score
+tree_scores = cross_val_score(
+    tree_reg,
+    housing_prepared,
+    housing_labels,
+    scoring="neg_mean_squared_error",
+    cv=10)
+tree_rmse_scores = np.sqrt(-tree_scores)
+display_scores(tree_rmse_scores)
+# The decision tree model seems to fare not really better than the lin. reg.
+
+# 8.L.K-Fold
+lin_scores = cross_val_score(
+    lin_reg,
+    housing_prepared,
+    housing_labels,
+    scoring="neg_mean_squared_error",
+    cv=10)
+lin_rmse_scores = np.sqrt(-lin_scores)
+display_scores(lin_rmse_scores)
+
+# 8.F. RandomForestRegressor (Ensemble Learning)
+from sklearn.ensemble import RandomForestRegressor
+forest_reg = RandomForestRegressor()
+forest_reg.fit(housing_prepared, housing_labels)
+housing_predictions = forest_reg.predict(housing_prepared)
+forest_mse = mean_squared_error(housing_labels, housing_predictions)
+forest_rmse = np.sqrt(forest_mse)
+
+#8.F.K-Fold on RandomForestRegressor
+forest_scores = cross_val_score(
+    forest_reg,
+    housing_prepared,
+    housing_labels,
+    scoring="neg_mean_squared_error",
+    cv=10)
+forest_rmse_scores = np.sqrt(-forest_scores)
+display_scores(forest_rmse_scores)
+# Author's note: A training set rmse much lower than the values in a k-fold
+# cross-validation could be a tell-tale sign of overfitting
+
+# 9. Serializing a model.
+# Saving our 'state-of-the-art'/'mind blowing' linear regression model
+# Alternative: Use pickle model
+from sklearn.externals import joblib
+joblib.dump(lin_reg, "lin_reg.pkl")
+lin_reg_loaded = joblib.load("lin_reg.pkl")
+
+#9. Hyperparameter training using GridSearchCV
+from sklearn.model_selection import GridSearchCV
+
+param_grid = [
+    {
+        'n_estimators': [3, 10, 30],
+        'max_features': [2, 4, 6, 8]
+    },
+    {
+        'bootstrap': [False],
+        'n_estimators': [3, 10],
+        'max_features': [2, 3, 4]
+    },
+]
+forest_reg = RandomForestRegressor()
+grid_search = GridSearchCV(
+    forest_reg, param_grid, cv=5, scoring='neg_mean_squared_error')
+grid_search.fit(housing_prepared, housing_labels)
