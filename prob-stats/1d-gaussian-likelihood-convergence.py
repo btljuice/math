@@ -14,7 +14,7 @@ min_val = np.min(data)
 max_val = np.max(data)
 x = np.linspace(min_val, max_val, 100)
 leg = [ mpatches.Patch(color='red', label='theorical'),
-        mpatches.Patch(color='green', label='likelihood') ]
+        mpatches.Patch(color='green', label='max-ll') ]
 
 
 def update_hist(num, data):
@@ -28,7 +28,7 @@ def update_hist(num, data):
     plt.hist(data[1:data_len], density=True)
     plt.plot(x, norm.pdf(x, mu, std), 'r')
     plt.plot(x, norm.pdf(x, ll_mu, ll_std), 'g')
-    plt.legend(handles=leg)
+    plt.legend(handles=leg, loc=1)
 
 
 fig = plt.figure()
