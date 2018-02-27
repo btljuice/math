@@ -644,3 +644,29 @@ final_rmse = np.sqrt(final_mse)
 # slightly worse than on the training/validation set. On the other hand,
 # if your model does not do good, it is likely that it does not generalize well.
 # This is where we assess if the model generalizes well, with unseen data.
+
+
+# Exercice 1 - Try using SVM a Regressor
+from sklearn.svm import SVR
+import numpy as np
+import datetime
+param_grid = [
+    {
+        'kernel': ['linear'],
+        'C': [.1, 1.0, 10.0],
+    },
+    {
+        'kernel': ['rbf'],
+        'C': [.1, 1.0, 10.0],
+        'gamma': ['auto', .1, 1.0, 10.0],
+    },
+]
+svr = SVR()
+grid_search = GridSearchCV(
+    svr, param_grid, cv=5, scoring='neg_mean_squared_error',
+    refit=False)  # 'refit' will retrain on the whole training set after the
+# best estimator is found
+grid_search.fit(housing_prepared, housing_labels)
+print(grid_search.best_params_, '\n')
+print(grid_search.best_estimator_, '\n')
+printSortedSearchCVResults(grid_search)
