@@ -8,12 +8,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import SGDClassifier
 from sklearn.multiclass import OneVsOneClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import ShuffleSplit
 from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import cross_val_predict
+from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import confusion_matrix, precision_recall_curve
 from sklearn.metrics import precision_score, recall_score, f1_score
 from sklearn.metrics import roc_curve, roc_auc_score
+from sklearn.neighbors import KNeighborsClassifier
 
 random_seed = 42
 mnist = fetch_mldata('MNIST original')
@@ -28,27 +31,28 @@ class Never5Classifier(BaseEstimator):
     def predict(self, X):
         return np.zeros((len(X), 1), dtype=bool)
 
+
 def plot_digits(instances, images_per_row=10, **options):
     size = 28
     images_per_row = min(len(instances), images_per_row)
-    images = [instance.reshape(size,size) for instance in instances]
+    images = [instance.reshape(size, size) for instance in instances]
     n_rows = (len(instances) - 1) // images_per_row + 1
     row_images = []
     n_empty = n_rows * images_per_row - len(instances)
     images.append(np.zeros((size, size * n_empty)))
     for row in range(n_rows):
-        rimages = images[row * images_per_row : (row + 1) * images_per_row]
+        rimages = images[row * images_per_row:(row + 1) * images_per_row]
         row_images.append(np.concatenate(rimages, axis=1))
     image = np.concatenate(row_images, axis=0)
-    plt.imshow(image, cmap = matplotlib.cm.binary, **options)
+    plt.imshow(image, cmap=matplotlib.cm.binary, **options)
     plt.axis("off")
 
-def show_image(x):
-    some_digit_image = x.reshape(28, 28)
+
+def plot_digit(x):
+    digit_image = x.reshape(28, 28)
     plt.imshow(
-        some_digit_image, cmap=matplotlib.cm.binary, interpolation="nearest")
+        digit_image, cmap=matplotlib.cm.binary, interpolation="nearest")
     plt.axis("off")
-    plt.show()
 
 
 def kfold_classifier_cross_val_score(clf, X, y):
@@ -89,6 +93,10 @@ def plot_roc_curve(y, scores, options):
     plt.xlabel('False Positive Rate = FP/(FP + TN)')
     plt.ylabel('recall=True Positive Rate= TP/(TP+FN)')
 
+
+def print_splits(split, data):
+    for train_index, test_index in split.split(data):
+        print("Train : ", sum(train_index), ", Test: ", sum(test_index))
 
 # Author's note: the mnist dataset is already configured to be split as:
 # - first 60000 images is the training set
@@ -291,18 +299,47 @@ def multi_classification_section():
 
     # Diplay some errors
     cl_a, cl_b = 3, 5
-    X_aa=X_train[(y_train==cl_a)&(y_train_pred==cl_a)]
-    X_ab=X_train[(y_train==cl_a)&(y_train_pred==cl_b)]
-    X_ba=X_train[(y_train==cl_b)&(y_train_pred==cl_a)]
-    X_bb=X_train[(y_train==cl_b)&(y_train_pred==cl_b)]
+    X_aa = X_train[(y_train == cl_a) & (y_train_pred == cl_a)]
+    X_ab = X_train[(y_train == cl_a) & (y_train_pred == cl_b)]
+    X_ba = X_train[(y_train == cl_b) & (y_train_pred == cl_a)]
+    X_bb = X_train[(y_train == cl_b) & (y_train_pred == cl_b)]
 
-    plt.figure(figsize=(8,8))
-    plt.subplot(221); plot_digits(X_aa[:25],images_per_row=5)
-    plt.subplot(222); plot_digits(X_ab[:25],images_per_row=5)
-    plt.subplot(223); plot_digits(X_ba[:25],images_per_row=5)
-    plt.subplot(224); plot_digits(X_bb[:25],images_per_row=5)
+    plt.figure(figsize=(8, 8))
+    plt.subplot(221); plot_digits(X_aa[:25], images_per_row=5)
+    plt.subplot(222); plot_digits(X_ab[:25], images_per_row=5)
+    plt.subplot(223); plot_digits(X_ba[:25], images_per_row=5)
+    plt.subplot(224); plot_digits(X_bb[:25], images_per_row=5)
     plt.show()
 
 
-# binary_classification_section()
-multi_classification_section()
+def multilabel_classification_section():
+    y_train_large = (y_train >= 7)
+    y_train_odd = (y_train % 2 == 1)
+    y_multilabel = np.c_[y_train_large, y_train_odd]  # like np.column_stack
+    knn_clf = KNeighborsClassifier()
+    knn_clf.fit(X_train, y_multilabel)
+    print("knn multilabel prediction is 5 : large,odd=", knn_clf.predict([some_digit]))
+    # Do not execute as it might take hours to complete.
+    # Compute score of model
+    # y_train_knn_pred = cross_val_predict(knn_clf, X_train, y_multilabel, cv=3, n_jobs=1)
+    # f1_score(y_train, y_train_knn_pred, average="macro")
+
+def multioutput_classification_section():
+    noise = np.random.randint(0, 100, (len(X_train), 784))
+    X_train_mod = X_train + noise
+    noise = np.random.randint(0, 100, (len(X_test), 784))
+    X_test_mod = X_test + noise
+    y_train_mod = X_train  # w/o noise
+    y_test_mod = y_train   # w/o noise
+    knn_clf = KNeighborsClassifier()
+    knn_clf.fit(X_train_mod, y_train_mod)
+    # Show the two digits
+    dirty_digit = X_train_mod[some_digit_index]
+    clean_digit = knn_clf.predict([dirty_digit])
+    plt.subplot(121)
+    plot_digit(dirty_digit)
+    plt.subplot(122)
+    plot_digit(clean_digit)
+    plt.show()
+
+
