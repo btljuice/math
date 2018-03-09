@@ -4,14 +4,21 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, LabelBinarizer
 from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import SGDClassifier
 from scipy import sparse
 from sklearn.utils import check_array
 from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import RandomizedSearchCV
+from scipy.stats import randint, uniform
 
 random_seed = 42
+g_verbose = 0
 
 # Definition of the CategoricalEncoder class, copied from PR #9151.
 # Just run this cell, or copy it to your code, do not try to understand it (yet).
@@ -210,8 +217,58 @@ class DataFrameSelector(BaseEstimator, TransformerMixin):
         return X[self.attribute_names].values
 
 
+class FemaleClassifier(BaseEstimator, ClassifierMixin):
+    def __init__(self):
+        pass
+
+    def fit(self, X, y):
+        pass
+
+    def predict(self, X, y=None):
+        return X.Sex == 0
+
+    def score(self, X, y=None):
+        return sum(self.predict(X) == y)/len(y)
+
+
+class LinearRegressionClassifier(BaseEstimator, ClassifierMixin):
+    def __init__(self):
+        self.lin_reg = LinearRegression()
+
+    def fit(self, X, y):
+        self.lin_reg.fit(X, y)
+
+    def predict(self, X, y=None):
+        return np.where(self.lin_reg.predict(X) > .5, 1, 0)
+
+    def score(self, X, y):
+        return sum(self.predict(X) == y)/len(y)
+
+
 def verify_stratified_split(col):
     print(col.value_counts() / len(col))
+
+
+def printSortedSearchCVResults(g):
+    cvres = g.cv_results_
+    i = 0
+    for mean, stdev, params in sorted(zip(cvres["mean_test_score"], cvres["std_test_score"], cvres["params"]), key=lambda x: x[0], reverse=True):
+        print("%.4f %.4f" % (mean, stdev), params)
+        i = i + 1
+        if i >= 10:
+            return
+
+
+def printClassifierAccuracy(model, X, t, name=''):
+    t_pred = model.predict(X)
+    accuracy = sum(t == t_pred)/len(t)
+    print("(%s) accuracy = %.4f" % (name, accuracy))
+
+
+def printClassifierCrossValueAccuracy(model, X, t, name=''):
+    scores = cross_val_score(model, X, t, cv=10, scoring="accuracy")
+    print("(%s) X-value mean=%.4f, stdev=%.4f" % (name, np.mean(scores), np.std(scores, ddof=1)))
+
 
 # ANSME: Is the train data stratified the same way as the test data?
 # - Through data.describe(), test.describe(), it seems it is, but
@@ -266,10 +323,10 @@ data.drop(['Cabin'], axis=1, inplace=True)
 # plt.show()
 
 # Stratified Shuffle Split
-strat_split = StratifiedShuffleSplit(n_splits=1, test_size=0.1, random_state=random_seed)
+strat_split = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=random_seed)
 for train_index, test_index in strat_split.split(
-        data, data[['Sex','AgeCat']]):  # TODO Add pClass. w/ pClass cannot do split
-                                        # because outer products leads to a bin of 1
+        data, data[['Sex', 'AgeCat']]):  # TODO Add pClass. w/ pClass cannot do split
+                                         # because outer products leads to a bin of 1
     train_data_idx = train_index
     test_data_idx = test_index
     train_data = data.iloc[train_index]
@@ -293,15 +350,51 @@ train_data_prepared = full_pipeline.fit_transform(train_data)
 test_data_prepared = full_pipeline.transform(test_data)  # NOTE: use of transform() only. do not refit.
 
 # 1. Baseline model: The female prediction model
-female_train_data_accuracy = sum(train_data.Sex != train_data.Survived)/len(train_data)
-female_test_data_accuracy = sum(test_data.Sex != test_data.Survived)/len(test_data)
+female_clf = FemaleClassifier() # No fitting needed
+printClassifierCrossValueAccuracy(female_clf, train_data, train_data.Survived, 'female / train')
+printClassifierAccuracy(female_clf, test_data, test_data.Survived, 'female / test')
 
 # 2. Linear regression model: Not suited for classification, but what the heck!
-lin_reg = LinearRegression()
-lin_reg.fit(train_data_prepared, train_data.Survived)
-
-train_data_predictions = np.where(lin_reg.predict(train_data_prepared) > .5, 1, 0)
-test_data_predictions = np.where(lin_reg.predict(test_data_prepared) > .5, 1, 0)
-lin_reg_train_data_accuracy = sum(train_data_predictions == train_data.Survived)/len(train_data)
-lin_reg_test_data_accuracy = sum(test_data_predictions == test_data.Survived)/len(test_data)
 # ANSME How to do an anova analysis of the parameters?
+lin_reg_clf = LinearRegressionClassifier()
+lin_reg_clf.fit(train_data_prepared, train_data.Survived)
+printClassifierCrossValueAccuracy(lin_reg_clf, train_data_prepared, train_data.Survived, 'lin reg / train')
+printClassifierAccuracy(lin_reg_clf, test_data_prepared, test_data.Survived, 'lin reg / test')
+
+
+# 3. SGDClassifier
+sgd_clf = SGDClassifier(random_state=random_seed, max_iter=1000, tol=1e-3)
+sgd_clf.fit(train_data_prepared, train_data.Survived)
+printClassifierCrossValueAccuracy(sgd_clf, train_data_prepared, train_data.Survived, 'def sgd / train')
+printClassifierAccuracy(sgd_clf, test_data_prepared, test_data.Survived, 'def sgd / test')
+
+# Grid search of hyperparameters
+param_grid = [{
+        'loss':['hinge','log','modified_huber','squared_hinge'],
+        'penalty':['l2','l1','elasticnet'],
+        'alpha':[.0001, .001, .01]
+    }]
+grid_search = GridSearchCV(sgd_clf, param_grid, cv=5, scoring='accuracy', refit=True, verbose=g_verbose)
+grid_search.fit(train_data_prepared, train_data.Survived)
+gs_sgd_clf = grid_search.best_estimator_
+printSortedSearchCVResults(grid_search)
+printClassifierCrossValueAccuracy(gs_sgd_clf, train_data_prepared, train_data.Survived, 'gs sgd')
+printClassifierAccuracy(gs_sgd_clf, test_data_prepared, test_data.Survived, 'gs sgd / test')
+
+# Random search of hyperparameters
+param_distribs = {
+    'loss':['hinge','log','modified_huber','squared_hinge'],
+    'penalty':['l2','l1','elasticnet'],
+    'alpha': uniform(1e-6,1)}
+rnd_search = RandomizedSearchCV(
+    sgd_clf,
+    param_distributions=param_distribs,
+    n_iter=100,
+    cv=5,
+    scoring="accuracy",
+    random_state=random_seed)
+rnd_search.fit(train_data_prepared, train_data.Survived)
+rs_sgd_clf = rnd_search.best_estimator_
+printSortedSearchCVResults(rnd_search)
+printClassifierCrossValueAccuracy(rs_sgd_clf, train_data_prepared, train_data.Survived, 'rs sgd')
+printClassifierAccuracy(rs_sgd_clf, test_data_prepared, test_data.Survived, 'rs sgd / test')
