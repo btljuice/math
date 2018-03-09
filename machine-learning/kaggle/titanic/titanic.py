@@ -16,9 +16,10 @@ from sklearn.utils import check_array
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import RandomizedSearchCV
 from scipy.stats import randint, uniform
+from sklearn.svm import SVC
 
 random_seed = 42
-g_verbose = 0
+g_verbose = 1
 
 # Definition of the CategoricalEncoder class, copied from PR #9151.
 # Just run this cell, or copy it to your code, do not try to understand it (yet).
@@ -249,13 +250,13 @@ def verify_stratified_split(col):
     print(col.value_counts() / len(col))
 
 
-def printSortedSearchCVResults(g):
+def printSortedSearchCVResults(g, ite_max=10):
     cvres = g.cv_results_
     i = 0
     for mean, stdev, params in sorted(zip(cvres["mean_test_score"], cvres["std_test_score"], cvres["params"]), key=lambda x: x[0], reverse=True):
         print("%.4f %.4f" % (mean, stdev), params)
         i = i + 1
-        if i >= 10:
+        if i >= ite_max:
             return
 
 
@@ -333,6 +334,8 @@ for train_index, test_index in strat_split.split(
     test_data = data.iloc[test_index]
 
 # Pipeline
+# num_attribs = ["Sex", "Age", "Fare", "HasCabin"]
+# cat_attribs = ["Pclass", "Embarked"]
 num_attribs = ["Sex", "Age", "SibSp", "Parch", "Fare", "HasCabin"]
 cat_attribs = ["Pclass", "Embarked", "AgeCat", "CabinLetter", "CabinNumber"]
 num_pipeline = Pipeline([
@@ -376,10 +379,10 @@ param_grid = [{
     }]
 grid_search = GridSearchCV(sgd_clf, param_grid, cv=5, scoring='accuracy', refit=True, verbose=g_verbose)
 grid_search.fit(train_data_prepared, train_data.Survived)
-gs_sgd_clf = grid_search.best_estimator_
-printSortedSearchCVResults(grid_search)
-printClassifierCrossValueAccuracy(gs_sgd_clf, train_data_prepared, train_data.Survived, 'gs sgd')
-printClassifierAccuracy(gs_sgd_clf, test_data_prepared, test_data.Survived, 'gs sgd / test')
+grid_search_sgd_clf = grid_search.best_estimator_
+printSortedSearchCVResults(grid_search,3)
+printClassifierCrossValueAccuracy(grid_search_sgd_clf, train_data_prepared, train_data.Survived, 'gs sgd')
+printClassifierAccuracy(grid_search_sgd_clf, test_data_prepared, test_data.Survived, 'gs sgd / test')
 
 # Random search of hyperparameters
 param_distribs = {
@@ -394,7 +397,33 @@ rnd_search = RandomizedSearchCV(
     scoring="accuracy",
     random_state=random_seed)
 rnd_search.fit(train_data_prepared, train_data.Survived)
-rs_sgd_clf = rnd_search.best_estimator_
-printSortedSearchCVResults(rnd_search)
-printClassifierCrossValueAccuracy(rs_sgd_clf, train_data_prepared, train_data.Survived, 'rs sgd')
-printClassifierAccuracy(rs_sgd_clf, test_data_prepared, test_data.Survived, 'rs sgd / test')
+rnd_search_sgd_clf = rnd_search.best_estimator_
+printSortedSearchCVResults(rnd_search,3)
+printClassifierCrossValueAccuracy(rnd_search_sgd_clf, train_data_prepared, train_data.Survived, 'rs sgd')
+printClassifierAccuracy(rnd_search_sgd_clf, test_data_prepared, test_data.Survived, 'rs sgd / test')
+
+
+# 4. SVC Classifier
+svc_clf = SVC(random_state=random_seed)
+svc_clf.fit(train_data_prepared, train_data.Survived)
+printClassifierCrossValueAccuracy(svc_clf, train_data_prepared, train_data.Survived,'def svc / train data')
+printClassifierAccuracy(svc_clf, train_data_prepared, train_data.Survived, 'def svc / test')
+
+# Grid search hyperparameters
+params = {
+    'C': [1e-4, 1e-3, .01, .1, 1, 10, 100],
+    'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
+    'degree': [1,2,3,4]
+    }
+grid_search = GridSearchCV(
+    svc_clf,
+    params,
+    cv=5,
+    scoring="accuracy",
+    verbose=g_verbose,
+    n_jobs=6)
+grid_search.fit(train_data_prepared, train_data.Survived)
+grid_search_svc_clf = grid_search.best_estimator_
+printSortedSearchCVResults(grid_search,3)
+printClassifierCrossValueAccuracy(grid_search_svc_clf, train_data_prepared, train_data.Survived,'grid svc / train data')
+printClassifierAccuracy(grid_search_svc_clf, train_data_prepared, train_data.Survived, 'grid svc / test')
