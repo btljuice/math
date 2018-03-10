@@ -1,0 +1,182 @@
+% Preamble
+% ---
+\documentclass{article}
+
+% Packages
+% ---
+% Adjust margins and paper size/orientation here
+\usepackage[letterpaper, portrait, margin=.5in]{geometry}
+\usepackage{amsmath} % Advanced math typesetting
+\usepackage[T1]{fontenc} % Font encoding for french
+\usepackage[utf8]{inputenc} % Unicode support (Umlauts etc.)
+\usepackage[french]{babel} % Change hyphenation rules
+\usepackage{hyperref} % Add a link to your document
+\usepackage{graphicx} % Add pictures to your document
+\usepackage{listings} % Source code formatting and highlighting
+\usepackage[document]{ragged2e}
+\usepackage{enumitem}
+\begin{document}
+\subsection*{Définitions}
+
+\begin{description}
+\item [predictors:] Variables d'entrées/\emph{input variables} utilisées dans le
+  cadre d'un problème d'apprentissage supervisé.
+\end{description}
+
+\subsection*{Interrogations/Brainstorm}
+\textbf{TOUTES LES NOTIONS CI-DESSOUS RESTENT A COMPRENDRE OU VALIDER!!!}
+
+\begin{enumerate}
+\item  \textbf{Inspection / Visualisation des données}:
+  \begin{itemize}[itemsep=1em]
+  \item Afin de minimiser le biais du surapprentissage, devrait-on réserver un \emph{test set}
+    avant même de regarder les données?
+    
+    Le simple fait de visualiser les données nous portera à faire des choix.
+    Ces choix intégrés dans notre processus, sont eux-mêmes une forme
+    d'apprentissage.
+    
+    D'un autre côté,  si on veut un créer un \emph{stratified test set},
+    représentatif de la population futur, il faut faire une analyse minimum
+    des données. Et même ce \emph{stratified test set}, s'il est conçu à partir d'un
+    sous-ensemble sélectionné de \emph{predictors}, il y a une assomption dans
+    cette sélection. C'est ce que \emph{Géron} fait dans le chapître 2 en
+    créant sont \emph{test set} à l'aide d'une catégorie de revenue.
+
+  \item Est-ce plus pertinent dans certains cas d'avoir un test set non
+    stratifié, mais qui couvre mieux l'ensemble des profils d'entrées, par
+    exemple en surreprésentant certains outliers?
+
+    \emph{e.g.} Comment mon modèle généralise-t-il pour les cas plus problématique?
+
+  \item Afin de minimiser le biais du surapprentissage, devrait-on réserver un \emph{test set}
+    avant d'effectuer une préselection des \emph{predictors}, ou encore
+    l'étape du \emph{data cleanup}.
+
+    Il y des cas par exemple où si le nombre de \emph{predictors} dépassent
+    largement le nombre d'échantillons du \emph{dataset}, il est impératif
+    de former son \emph{test set} avant de faire une sélection de \emph{predictors}.
+
+    Voir: \url{https://youtu.be/S06JpVoNaA0}
+  \end{itemize}
+\item \textbf{Étape de nettoyage}:
+  \begin{itemize}[itemsep=1em]
+  \item \textbf{Donn\'ees manquantes / valeurs nan}:
+
+    La plupart des modèles mathématiques ne gèrent pas bien les donn\'ees
+    manquantes. Il faut nettoyer les données pour utiliser ces modèles
+    durant l'étape d'apprentissage. Par contre, il ne faut jamais perdre de
+    vue que ce même modèle utilisé en production pourrait aussi recevoir
+    des entrées incomplètes. Il faut établir une stratégie de nettoyage de
+    données autant pour la étape d'apprentissage que la étape de
+    production.
+
+    Il est donc très important de comprendre en quoi cette stratégie de
+    nettoyage de données affecte le processus d'apprentissage. Comment
+    peut-elle biaiser les résultats?
+
+    Par exemples:
+    \begin{itemize}
+    \item Est-ce que la distribution des échantillons ayant des donn\'ees
+      manquantes sera la m\^eme dans le futur?
+    \item Est-ce qu'une donnée manquante est une information pertinente en soi?
+
+      Exemple: Dans le jeu de données du Titanic, il semble que le fait qu'un
+      passager n'ait pas de num\'ero de cabine (\emph{nan}), pourrait indiquer
+      qu'il n'ait pas de cabine qui lui ait \'et\'e attribu\'ee ou r\'eserv\'ee.
+      cabine. Peu importe la raison, la donnée manquante a une certaine valeur
+      pr\'edictive en soi.
+    \end{itemize}
+
+  \item \textbf{Strat\'egies de nettoyage:}
+    \begin{enumerate}
+    \item \underline{\'Elimination de données/\emph{row}}: Pour les colonnes où il y a peu
+      de \emph{nan} (\emph{e.g.} 1\% \`a 2\% du jeu de données), on peut
+      sans trop de risques éliminer les \'echantillons/lignes incluant ces \emph{nan}.
+
+    \item \underline{\'Elimination du \emph{predictor}/\emph{colonne}}: Si un
+      \emph{predictor} ne semble pas pertinent, ou qu'il manque trop de données,
+      on peut l'éliminer.
+
+    \item \underline{Strat\'egie de la moyenne/m\'ediane/mode/``valeur neutre''}: On remplace
+      les données manquantes d'une colonne, par la
+      moyenne/m\'ediane/mode/``valeur neutre''.
+
+      Si ces données sont en quantit\'es non-n\'egligeagles, cela vient
+      modifier la distribution de la colonne modifi\'ee.
+
+      Dans quelles circonstances corrompt-on l'apprentissage, lorsqu'on floue le modèle
+      lorsqu'on lui indique que pour un \'echantillon donnée, un de ces
+      \emph{predictors} est égal à la moyenne/m\'ediane/mode, alors qu'en
+      r\'ealit\'e on ne conna\^it pas la vraie valeur?
+
+    \item \underline{Ajouter un label \emph{unknown} si le \emph{predictor} est
+        une catégorie}: Pour une \emph{predictor} de type catégorie, on peut
+      simplement ajouter un label \emph{unknown}, pour indiquer au modèle qu'on
+      ne connaît la valeur.
+
+    \item \underline{Transformation d'un \emph{predictor} $\in{\mathbb{R}}$ en une
+      catégorie}: On transforme notre \emph{predictor} en catégorie et on
+    applique la stratégie pr\'ec\'edente.
+
+    \end{enumerate}
+  \end{itemize}
+  \item \textbf{Feature extraction}:
+    \begin{itemize}
+    \item Comment \'evalue-t-on qu'un \emph{predictor} est pertinent ou pas?
+    \item Quels sont les bonnes strat\'egies pour cr\'eer des features? Ça doit
+      dépendre des domaines...
+    \item Quand est-ce qu'on a trop de \emph{predictors}?
+    \item Quels modèles sont plus/moins sensibles aux nombres de
+      \emph{predictors} qui leurs sont pr\'esent\'es?
+
+      En d'autres mots est-ce que le modèle est capable de quelconque
+      mani\`ere de s\'electionner les \emph{predictors} pertinents?
+      
+      Est-ce que le modèle aura tendance \`a overfitter ou mal g\'en\'eraliser
+      avec trop de \emph{predictors}?
+    \end{itemize}
+  \item \textbf{Model Selection}:
+    \begin{itemize}
+      \item Quel est la bonne fonction de perte pertinente \`a \'evaluer?
+      \item Y-a-t-il plus qu'une m\'etrique \'a \'evaluer?
+        \emph{e.g} \emph{Recall} vs \emph{Precision}, etc.
+      \item \emph{Validation Set} vs \emph{Test Set}:
+        
+        Dans la plupart des stratégies présentées, on fait une
+        \emph{cross-validation} sur le \emph{training set} pour optimiser les
+        hyperparam\'etres d'un modèle. L'optimisation des hyperparam\'etres est
+        une forme d'entrainement au même titre que l'entraînement normal d'un
+        modèle.
+
+        Lors de cette \'etape, on peut estimer empiriquement la moyenne et la
+        variance de sa fonction de perte, sur la du \emph{fold} réservée à la
+        validation. Mais ces estimations sont généralement biaisées vers le bas,
+        comme toute estimation issue d'un entraînement / fitting.
+
+        Lorsqu'on résout un problème de régression, on peut évaluer la
+        performance finale du modèle via un \emph{Test Set}. On obtiendra un
+        estimation empirique de de la moyenne et la variance de la fonction de perte.
+
+     
+      \item \underline{Inner/Outer cross-validation}:
+
+        Lorsqu'on a la puissance de calcul/le temps pour le faire on peut appliquer une
+        stratégie de \emph{cross-validation} aussi pour le \emph{Test Set}.
+
+        Donc au lieu d'appliquer une stratégie \emph{Hold-Out} en gardant un
+        seul et unique \emph{Test Set} final, on applique aussi un \emph{K-Fold
+          cross-validation} pour le \emph{Test Set}.
+
+        \emph{Inner} pour la \emph{cross-validation} de chaque modèle.
+
+        \emph{Outer} pour la \emph{cross-validation} l'évaluation du modèle final.
+
+        Normalement si notre modèle généralise bien, il ressortira gagnant à
+        chaque étape de la \emph{Outer cross-validation}
+    \end{itemize}
+    
+\end{enumerate}
+
+
+\end{document}
