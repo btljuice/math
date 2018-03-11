@@ -17,9 +17,10 @@ from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import RandomizedSearchCV
 from scipy.stats import randint, uniform
 from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 
 random_seed = 42
-g_verbose = 1
+g_verbose = 2
 
 # Definition of the CategoricalEncoder class, copied from PR #9151.
 # Just run this cell, or copy it to your code, do not try to understand it (yet).
@@ -271,6 +272,12 @@ def printClassifierCrossValueAccuracy(model, X, t, name=''):
     print("(%s) X-value mean=%.4f, stdev=%.4f" % (name, np.mean(scores), np.std(scores, ddof=1)))
 
 
+def clf_x_value_score_stats(model, X, t, scoring="accuracy"):
+    scores = cross_val_score(model, X, t, cv=5, scoring=scoring)
+    return (np.mean(scores), np.std(scores,ddof=1))
+
+
+
 # ANSME: Is the train data stratified the same way as the test data?
 # - Through data.describe(), test.describe(), it seems it is, but
 #   how to describe it quantitatively?
@@ -307,32 +314,6 @@ data.CabinNumber = pd.cut(
     labels=['unknown', '1-25', '25-50', '50-100', '100-150'])
 data.drop(['Cabin'], axis=1, inplace=True)
 
-# data.Embarked = LabelEncoder().fit_transform(data.Embarked)
-# data.AgeCat = LabelEncoder().fit_transform(data.AgeCat)
-# data.CabinLetter = LabelEncoder().fit_transform(data.CabinLetter)
-
-# data.Pclass = OneHotEncoder().fit_transform(data.Pclass.reshape(-1,1))
-# data.Embarked = OneHotEncoder().fit_transform(data.Embarked.reshape(-1, 1))
-# data.Pclass = OneHotEncoder().fit_transform(data.Pclass.reshape(-1, 1))
-# data.AgeCat = OneHotEncoder().fit_transform(data.AgeCat.reshape(-1, 1))
-# data.CabinLetter = One
-
-# data.corr()
-# data.info()
-
-# data.hist(bins=50, figsize=(20,15))
-# plt.show()
-
-# Stratified Shuffle Split
-strat_split = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=random_seed)
-for train_index, test_index in strat_split.split(
-        data, data[['Sex', 'AgeCat']]):  # TODO Add pClass. w/ pClass cannot do split
-                                         # because outer products leads to a bin of 1
-    train_data_idx = train_index
-    test_data_idx = test_index
-    train_data = data.iloc[train_index]
-    test_data = data.iloc[test_index]
-
 # Pipeline
 # num_attribs = ["Sex", "Age", "Fare", "HasCabin"]
 # cat_attribs = ["Pclass", "Embarked"]
@@ -345,85 +326,171 @@ cat_pipeline = Pipeline([('selector', DataFrameSelector(cat_attribs)),
                          ('cat_encoder',
                           CategoricalEncoder(encoding="onehot-dense"))])
 full_pipeline = FeatureUnion(transformer_list=[
-    ("num_pipeline", num_pipeline),
-    ("cat_pipeline", cat_pipeline)])
-
-# Prepare data for learning models
-train_data_prepared = full_pipeline.fit_transform(train_data)
-test_data_prepared = full_pipeline.transform(test_data)  # NOTE: use of transform() only. do not refit.
-
-# 1. Baseline model: The female prediction model
-female_clf = FemaleClassifier() # No fitting needed
-printClassifierCrossValueAccuracy(female_clf, train_data, train_data.Survived, 'female / train')
-printClassifierAccuracy(female_clf, test_data, test_data.Survived, 'female / test')
-
-# 2. Linear regression model: Not suited for classification, but what the heck!
-# ANSME How to do an anova analysis of the parameters?
-lin_reg_clf = LinearRegressionClassifier()
-lin_reg_clf.fit(train_data_prepared, train_data.Survived)
-printClassifierCrossValueAccuracy(lin_reg_clf, train_data_prepared, train_data.Survived, 'lin reg / train')
-printClassifierAccuracy(lin_reg_clf, test_data_prepared, test_data.Survived, 'lin reg / test')
+("num_pipeline", num_pipeline),
+("cat_pipeline", cat_pipeline)])
+full_pipeline.fit(data)  # Warning: it is better to fit the pipeline on the whole
+                         # Data as if you later split you data between train/test
+                         # And a certain category is not when fitting on the train
+                         # data for example, but on the test data (e.g. 'T' cabin)
+                         # The code will fail to fit.
+                         # Thus:
+                         # - If the pipeline only prepares the data:
+                         #   fit it on the whole data.
 
 
-# 3. SGDClassifier
-sgd_clf = SGDClassifier(random_state=random_seed, max_iter=1000, tol=1e-3)
-sgd_clf.fit(train_data_prepared, train_data.Survived)
-printClassifierCrossValueAccuracy(sgd_clf, train_data_prepared, train_data.Survived, 'def sgd / train')
-printClassifierAccuracy(sgd_clf, test_data_prepared, test_data.Survived, 'def sgd / test')
+results = {}
 
-# Grid search of hyperparameters
-param_grid = [{
+def gather_scores(name, model, train_X, train_y, test_X, test_y, param_names=None):
+    if not (name in results):
+        results[name] = {}
+        results[name]['train'] = []
+        results[name]['test'] = []
+        results[name]['params'] = []
+
+    results[name]['train'].append(clf_x_value_score_stats(model, train_X, train_y))
+    results[name]['test'].append(model.score(test_X, test_y))
+    if param_names:
+        results[name]['params'].append({ k : model.get_params()[k] for k in param_names })
+
+
+# Stratified Shuffle Split
+i = 0
+strat_split = StratifiedShuffleSplit(n_splits=5, test_size=0.2, random_state=random_seed)
+for train_index, test_index in strat_split.split(
+        data, data[['Sex', 'AgeCat']]):  # TODO Add pClass. w/ pClass cannot do split
+                                         # because outer products leads to a bin of 1
+    i = i + 1
+    print("i=",i)
+
+    train_data = data.iloc[train_index]
+    test_data = data.iloc[test_index]
+
+    # Prepare data for learning models
+    train_data_prepared = full_pipeline.transform(train_data)
+    test_data_prepared = full_pipeline.transform(test_data)  # NOTE: use of transform() only. do not refit.
+
+
+    # 1. Baseline model: The female prediction model
+    female_clf = FemaleClassifier() # No fitting needed
+    gather_scores('female', female_clf,
+                  train_data, train_data.Survived,
+                  test_data, test_data.Survived)
+
+    # 2. Linear regression model: Not suited for classification, but what the heck!
+    # ANSME How to do an anova analysis of the parameters?
+    lin_reg_clf = LinearRegressionClassifier()
+    lin_reg_clf.fit(train_data_prepared, train_data.Survived)
+    gather_scores('lin_reg', lin_reg_clf,
+                  train_data_prepared, train_data.Survived,
+                  test_data_prepared, test_data.Survived)
+
+    # 3. SGDClassifier
+    sgd_param_names = {'loss','penalty','alpha'}
+    sgd_clf = SGDClassifier(random_state=random_seed, max_iter=1000, tol=1e-3)
+    sgd_clf.fit(train_data_prepared, train_data.Survived)
+    gather_scores('sgd default', sgd_clf,
+                  train_data_prepared, train_data.Survived,
+                  test_data_prepared, test_data.Survived,
+                  sgd_param_names)
+
+    # Grid search of hyperparameters
+    param_grid = [{
+            'loss':['hinge','log','modified_huber','squared_hinge'],
+            'penalty':['l2','l1','elasticnet'],
+            'alpha':[.0001, .001, .01]
+        }]
+    grid_search = GridSearchCV(
+        sgd_clf,
+        param_grid,
+        cv=5,
+        scoring='accuracy',
+        refit=True,
+        verbose=g_verbose,
+        n_jobs=6)
+    grid_search.fit(train_data_prepared, train_data.Survived)
+    grid_search_sgd_clf = grid_search.best_estimator_
+    printSortedSearchCVResults(grid_search,3)
+    gather_scores('sgd grid', grid_search_sgd_clf,
+                  train_data_prepared, train_data.Survived,
+                  test_data_prepared, test_data.Survived,
+                  sgd_param_names)
+
+    # Random search of hyperparameters
+    param_distribs = {
         'loss':['hinge','log','modified_huber','squared_hinge'],
         'penalty':['l2','l1','elasticnet'],
-        'alpha':[.0001, .001, .01]
-    }]
-grid_search = GridSearchCV(sgd_clf, param_grid, cv=5, scoring='accuracy', refit=True, verbose=g_verbose)
-grid_search.fit(train_data_prepared, train_data.Survived)
-grid_search_sgd_clf = grid_search.best_estimator_
-printSortedSearchCVResults(grid_search,3)
-printClassifierCrossValueAccuracy(grid_search_sgd_clf, train_data_prepared, train_data.Survived, 'gs sgd')
-printClassifierAccuracy(grid_search_sgd_clf, test_data_prepared, test_data.Survived, 'gs sgd / test')
+        'alpha': uniform(1e-6,1)}
+    rnd_search = RandomizedSearchCV(
+        sgd_clf,
+        param_distributions=param_distribs,
+        n_iter=100,
+        cv=5,
+        scoring="accuracy",
+        random_state=random_seed,
+        n_jobs=6)
+    rnd_search.fit(train_data_prepared, train_data.Survived)
+    rnd_search_sgd_clf = rnd_search.best_estimator_
+    printSortedSearchCVResults(rnd_search,3)
+    gather_scores('sgd rand', rnd_search_sgd_clf,
+                  train_data_prepared, train_data.Survived,
+                  test_data_prepared, test_data.Survived,
+                  sgd_param_names)
 
-# Random search of hyperparameters
-param_distribs = {
-    'loss':['hinge','log','modified_huber','squared_hinge'],
-    'penalty':['l2','l1','elasticnet'],
-    'alpha': uniform(1e-6,1)}
-rnd_search = RandomizedSearchCV(
-    sgd_clf,
-    param_distributions=param_distribs,
-    n_iter=100,
-    cv=5,
-    scoring="accuracy",
-    random_state=random_seed)
-rnd_search.fit(train_data_prepared, train_data.Survived)
-rnd_search_sgd_clf = rnd_search.best_estimator_
-printSortedSearchCVResults(rnd_search,3)
-printClassifierCrossValueAccuracy(rnd_search_sgd_clf, train_data_prepared, train_data.Survived, 'rs sgd')
-printClassifierAccuracy(rnd_search_sgd_clf, test_data_prepared, test_data.Survived, 'rs sgd / test')
+    # 4. SVC Classifier
+    svc_param_names = { 'C', 'kernel', 'degree'}
+    svc_clf = SVC(random_state=random_seed)
+    svc_clf.fit(train_data_prepared, train_data.Survived)
+    gather_scores('svc default', svc_clf,
+                  train_data_prepared, train_data.Survived,
+                  test_data_prepared, test_data.Survived,
+                  svc_param_names)
 
+    # Grid search hyperparameters
+    params = {
+        'C': [1e-4, 1e-3, .01, .1, 1, 10],
+        'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
+        'degree': [1,2,3,4]
+        }
+    grid_search = GridSearchCV(
+        svc_clf,
+        params,
+        cv=5,
+        scoring="accuracy",
+        verbose=g_verbose,
+        n_jobs=6)
+    grid_search.fit(train_data_prepared, train_data.Survived)
+    grid_search_svc_clf = grid_search.best_estimator_
+    printSortedSearchCVResults(grid_search,3)
+    gather_scores('svc grid', grid_search_svc_clf,
+                  train_data_prepared, train_data.Survived,
+                  test_data_prepared, test_data.Survived,
+                  svc_param_names)
 
-# 4. SVC Classifier
-svc_clf = SVC(random_state=random_seed)
-svc_clf.fit(train_data_prepared, train_data.Survived)
-printClassifierCrossValueAccuracy(svc_clf, train_data_prepared, train_data.Survived,'def svc / train data')
-printClassifierAccuracy(svc_clf, train_data_prepared, train_data.Survived, 'def svc / test')
+    # 5. K-Nearest Neighbors
+    knn_param_names = { 'n_neighbors', 'weights', 'algorithm' }
+    knn_clf = KNeighborsClassifier()
+    knn_clf.fit(train_data_prepared, train_data.Survived)
+    gather_scores('knn default', knn_clf,
+                  train_data_prepared, train_data.Survived,
+                  test_data_prepared, test_data.Survived,
+                  knn_param_names)
 
-# Grid search hyperparameters
-params = {
-    'C': [1e-4, 1e-3, .01, .1, 1, 10, 100],
-    'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-    'degree': [1,2,3,4]
+    params = {
+        'n_neighbors': [2, 3, 4, 5, 6, 7],
+        'weights': [ 'uniform', 'distance'],
+        'algorithm': [ 'auto', 'ball_tree', 'kd_tree', 'brute']
     }
-grid_search = GridSearchCV(
-    svc_clf,
-    params,
-    cv=5,
-    scoring="accuracy",
-    verbose=g_verbose,
-    n_jobs=6)
-grid_search.fit(train_data_prepared, train_data.Survived)
-grid_search_svc_clf = grid_search.best_estimator_
-printSortedSearchCVResults(grid_search,3)
-printClassifierCrossValueAccuracy(grid_search_svc_clf, train_data_prepared, train_data.Survived,'grid svc / train data')
-printClassifierAccuracy(grid_search_svc_clf, train_data_prepared, train_data.Survived, 'grid svc / test')
+    grid_search = GridSearchCV(
+        knn_clf,
+        params,
+        cv=5,
+        scoring="accuracy",
+        verbose=g_verbose,
+        n_jobs=6)
+    grid_search.fit(train_data_prepared, train_data.Survived)
+    grid_search_knn_clf = grid_search.best_estimator_
+    printSortedSearchCVResults(grid_search,3)
+    gather_scores('knn grid', grid_search_knn_clf,
+                  train_data_prepared, train_data.Survived,
+                  test_data_prepared, test_data.Survived,
+                  knn_param_names)
