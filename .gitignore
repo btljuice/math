@@ -1,2 +1,16 @@
-.ipynb_checkpoints
+# Geron dataset
 **/oreilly-handson/datasets/
+
+# Jupyter notebook related file
+.ipynb_checkpoints
+
+# Latex related files
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+
+# Octave
+octave-workspace
