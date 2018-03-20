@@ -39,3 +39,16 @@ function ret = maxDetSignMatrix(n, i, A=[], ret=[ -Inf []] )
   endif
 endfunction
 
+# Chapter 5.2. - ex.3
+A = [ 1 1 0; 1 0 1; 0 1 1]
+C = [A zeros(3) ; zeros(3) A]  # Gives 4 and not -1
+
+# Chapter 5.3 - ex.9
+A = [ 1 1 -1 ; 1 -1 -1; -1 1 -1]
+det(A) # Gives 4 Hadamard Matrix
+
+# 5.3 - ex. 12
+C = [ 3 2 1 ; 2 4 2; 1 2 3 ]  # Cofactor matrix of A
+A = [ 2 -1 0 ; -1 2 -1 ; 0 -1 2 ]
+C'
+det(A)*A^-1
