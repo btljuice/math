@@ -277,42 +277,51 @@ def clf_x_value_score_stats(model, X, t, scoring="accuracy"):
     return (np.mean(scores), np.std(scores,ddof=1))
 
 
+def transform_data(data, age_mean, fare_mean):
+    # Manual code cleanup.
+
+    data.drop(['Ticket', 'PassengerId', 'Name'], axis=1, inplace=True,errors='ignore')  # Assumed to be of no interest
+    data.Sex = LabelEncoder().fit_transform(data.Sex)  # 0 = female, 1 = male
+    data.dropna(subset=["Embarked"], inplace=True)  # Only 2 values are nan
+
+    # Fill nan in ages. The mean strategy was chosen out of simplicity
+    data.Age.fillna(age_mean, inplace=True)  # mean (29.64) is close to median (28)
+    data.Fare.fillna(fare_mean, inplace=True)
+
+    # Create an age category. PURELY ARBITRARY.
+    # I assume children categories might be more important, therefore finer grained.
+    # data["AgeCat10"] =  np.floor(data.Age / 10)
+    data["AgeCat"] = pd.cut(
+        data.Age.fillna(-1),
+        right=False,
+        bins=[-10, 0, 5, 10, 15, 20, 30, 40, 50, 500],
+        labels=['unknown', '0-5', '5-10', '10-15', '15-20', '20-30', '30-40', '40-50', '>=50'])
+
+    # Cabin categories
+    data["HasCabin"] = np.where(data.Cabin.isna(), 0, 1)
+    data["CabinLetter"] = data.Cabin.str.extract('([A-Z])', expand=False)  # Only keep first cabin letter if any
+    data["CabinNumber"] = data.Cabin.str.extract('[A-Z](\d+)', expand=False)  # Only keep first cabin number if any
+    data.CabinLetter.fillna('unknown', inplace=True)  # When no cabin, fill with X0
+    data.CabinNumber.fillna(-1, inplace=True)
+    data.CabinNumber = pd.to_numeric(data.CabinNumber)  # ANSME: Maybe convert to categories
+    data.CabinNumber = pd.cut(
+        data.CabinNumber,
+        right=False,
+        bins=[-10, 0, 25, 50, 100, 150],
+        labels=['unknown', '1-25', '25-50', '50-100', '100-150'])
+    data.drop(['Cabin'], axis=1, inplace=True)
+
+    return data
+
 
 # ANSME: Is the train data stratified the same way as the test data?
 # - Through data.describe(), test.describe(), it seems it is, but
 #   how to describe it quantitatively?
 data = pd.read_csv('data/train.csv')
 
-# Manual code cleanup.
-data.drop(['Ticket', 'PassengerId', 'Name'], axis=1, inplace=True)  # Assumed to be of no interest
-data.Sex = LabelEncoder().fit_transform(data.Sex)  # 0 = female, 1 = male
-data.dropna(subset=["Embarked"], inplace=True)  # Only 2 values are nan
-
-# Fill nan in ages. The mean strategy was chosen out of simplicity
-data.Age.fillna(data.Age.mean(), inplace=True)  # mean (29.64) is close to median (28)
-
-# Create an age category. PURELY ARBITRARY.
-# I assume children categories might be more important, therefore finer grained.
-# data["AgeCat10"] =  np.floor(data.Age / 10)
-data["AgeCat"] = pd.cut(
-    data.Age.fillna(-1),
-    right=False,
-    bins=[-10, 0, 5, 10, 15, 20, 30, 40, 50, 500],
-    labels=['unknown', '0-5', '5-10', '10-15', '15-20', '20-30', '30-40', '40-50', '>=50'])
-
-# Cabin categories
-data["HasCabin"] = np.where(data.Cabin.isna(), 0, 1)
-data["CabinLetter"] = data.Cabin.str.extract('([A-Z])', expand=False)  # Only keep first cabin letter if any
-data["CabinNumber"] = data.Cabin.str.extract('[A-Z](\d+)', expand=False)  # Only keep first cabin number if any
-data.CabinLetter.fillna('unknown', inplace=True)  # When no cabin, fill with X0
-data.CabinNumber.fillna(-1, inplace=True)
-data.CabinNumber = pd.to_numeric(data.CabinNumber)  # ANSME: Maybe convert to categories
-data.CabinNumber = pd.cut(
-    data.CabinNumber,
-    right=False,
-    bins=[-10, 0, 25, 50, 100, 150],
-    labels=['unknown', '1-25', '25-50', '50-100', '100-150'])
-data.drop(['Cabin'], axis=1, inplace=True)
+age_mean = data.Age.mean()
+fare_mean = data.Fare.mean()
+data = transform_data(data, age_mean, fare_mean)
 
 # Pipeline
 # num_attribs = ["Sex", "Age", "Fare", "HasCabin"]
@@ -494,3 +503,21 @@ for train_index, test_index in strat_split.split(
                   train_data_prepared, train_data.Survived,
                   test_data_prepared, test_data.Survived,
                   knn_param_names)
+
+
+for k,v in results.items():
+    mu = np.mean(v['test'])
+    mu = np.mean(v['test'])
+    sigma = np.std(v['test'], ddof=1)
+    print(k + " : mean = %.2f, sigma = %.2f" % (mu, sigma))
+
+
+# Let's choose the svc grid classificator
+submission_data = pd.read_csv('data/test.csv')
+submission_data_id = list(submission_data.PassengerId)
+submission_data = transform_data(submission_data, age_mean, fare_mean)
+submission_data_prepared = full_pipeline.transform(submission_data)
+submission_data_prediction = grid_search_svc_clf.predict(submission_data_prepared)
+submission_csv = pd.DataFrame({'PassengerId':submission_data_id,
+                               'Survived':submission_data_prediction})
+submission_csv.to_csv('submission/grid_svc.csv', index=False)

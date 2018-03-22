@@ -1,5 +1,6 @@
 # Geron dataset
 **/oreilly-handson/datasets/
+**/auto/
 
 # Jupyter notebook related file
 .ipynb_checkpoints
