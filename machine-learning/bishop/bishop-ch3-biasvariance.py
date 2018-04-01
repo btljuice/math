@@ -51,9 +51,9 @@ def linreg_bias2(datasets, reg_params):
     for r in reg_params:
         W = np.column_stack([ linreg_maxll(d['Phi'],d['t'], r) for d in datasets ])
         x = np.linspace(0,1,100)
-        t = np.asmatrix(h(x)).T
+        t_theorical = np.asmatrix(h(x)).T
         t_pred_mean = linreg_predict_mean(W,x)
-        bias_2.append(np.mean(np.square(t_pred_mean - t)))
+        bias_2.append(np.mean(np.square(t_pred_mean - t_theorical)))
     return bias_2
 
 def linreg_variance(datasets, reg_params):

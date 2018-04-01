@@ -35,9 +35,9 @@ endfunction
 function r = param_pdf(w0, w1, mu, sigma)
   assert(size_equal(w0, w1) && issquare(sigma) );
 
-  w = [ w0'(:) w1'(:) ];  # Make it a n x 2 matrix to fit mvnpdf arguments
+  w = [ w0(:) w1(:) ];  # Make it a n x 2 matrix to fit mvnpdf arguments
   r = mvnpdf(w, mu', sigma);
-  r = reshape(r, size(w0))'; # reshape column order first
+  r = reshape(r, size(w0)); # reshape column order first
 endfunction
 
 function r = prior_pdf(w0, w1)
