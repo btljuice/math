@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-from numpy import asmatrix, matrix
+from numpy import array
 from numpy import random, ones, zeros
 from numpy.matlib import repmat
 from mpl_toolkits.mplot3d import Axes3D
@@ -13,7 +13,7 @@ from matplotlib import cm
 random.seed(42)
 
 # Global parameters
-W_theorical = matrix('-.3; .5')
+W_theorical = array([ -.3, .5 ])
 noise_stdev = .25
 n_samples = 25
 x_dom = [0, 1]
@@ -24,16 +24,16 @@ matplotlib.rcParams['ytick.direction'] = 'out'
 
 
 def h_theorical(X):
-    return X * W_theorical
+    return X @ W_theorical
 
 
 def generate_noise(n):
-    return asmatrix(random.normal(0, noise_stdev, n)).T
+    return random.normal(0, noise_stdev, n)
 
 
 def generate_predictors(n):
-    X = random.uniform(x_dom[0], x_dom[1], n)  # Between [0, 1]
-    return matrix([ones(n), X]).T
+    x = random.uniform(x_dom[0], x_dom[1], n)  # Between [0, 1]
+    return array([ones(n), x]).T
 
 
 def generate_samples(n):
@@ -44,22 +44,22 @@ def generate_samples(n):
 
 def model_predict(W, X):
     # Linear regression model
-    return X * W
+    return X @ W
 
 
 def loss(T_pred, T_theorical):
     # Sum of square errors computed for each column separately
-    return asmatrix(np.sum((T_pred - T_theorical).A**2, axis=0))
+    return np.sum((T_pred - T_theorical)**2, axis=0)
 
 
 def loss_gradient(w, X, t):
     # Gradient of sum of square errors
     n = X.shape[0]  # Number of samples
     d = X.shape[1]  # Dimension of the predictors
-    g = zeros([d, 1])
+    g = zeros(d)
     for i in range(n):
-        x = X[i, :]
-        g += float(x*w - t[i])*x.T
+        x = X[i]
+        g += float(x@w - t[i])*x
     return g
 
 
@@ -103,10 +103,13 @@ def plot_surface(f, x_range=None, y_range=None, title=''):
 
 
 def loss_contour(w0, w1, X, T):
-    W = matrix([w0.flatten(), w1.flatten()])
+    W = array([w0.flatten(), w1.flatten()])
     T_pred = model_predict(W, X)
+    if T.ndim == 1:
+        T = T[None].T
+
     n = T_pred.shape[1]
-    L = loss(T_pred, repmat(T, 1, n))
+    L = loss(T_pred, np.tile(T, (1, n)))
     L.shape = w0.shape
     return L
 
@@ -124,7 +127,7 @@ def gradient_descent(gradient_func, w0, learning_rate=1, epsilon=1e-3, max_ite=1
         ret_g.append(next_g)
 
         # TODO: Both convergence test could be enhanced
-        # 1st test: has w converged
+        # 1st test: has w converged since last iteration
         # 2nd test: is gradient close to 0
         if    all(abs(w - next_w) <= epsilon) \
            or all(abs(next_g) <= epsilon):
@@ -135,7 +138,6 @@ def gradient_descent(gradient_func, w0, learning_rate=1, epsilon=1e-3, max_ite=1
     ret_g = np.array(ret_g)
     ret_g.shape = (ret_g.shape[0], ret_g.shape[1])
     return ret_w, ret_g
-
 
 
 class StochasticGradient:
@@ -154,7 +156,7 @@ class StochasticGradient:
         i = self._indexes[self._ite]
         x = self._X[i, :]
         t = self._t[i]
-        l = float(x*w - t)*x.T
+        l = float(x@w - t)*x
 
         self._ite += 1
         if self._ite >= self._n:
@@ -169,7 +171,7 @@ X, T = generate_samples(n_samples)
 # Batch Gradient descent
 n = X.shape[0]
 d = X.shape[1]
-w0 = asmatrix('.9; .9')
+w0 = array([.9,.9])
 w_batch, g_batch = gradient_descent(
     lambda w: loss_gradient(w, X, T),
     w0,
