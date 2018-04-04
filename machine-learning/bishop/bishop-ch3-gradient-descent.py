@@ -172,22 +172,36 @@ X, T = generate_samples(n_samples)
 n = X.shape[0]
 d = X.shape[1]
 w0 = array([.9,.9])
+batch_learning_rate = .04  # Good values
+stochastic_learning_rate = .12  # Good values
+# batch_learning_rate = .07  # Bad values
+# stochastic_learning_rate = .6  # Bad values
 w_batch, g_batch = gradient_descent(
     lambda w: loss_gradient(w, X, T),
     w0,
-    learning_rate=.04)  # Found by trial and error
+    learning_rate=batch_learning_rate)  # Found by trial and error
 
 w_sto, g_sto = gradient_descent(
     StochasticGradient(X, T),
     w0,
-    learning_rate=.12,
+    learning_rate=stochastic_learning_rate,
     max_ite=100000
 
 )
 
-plot_contour(lambda w0, w1: loss_contour(w0, w1, X, T), title='Loss Function')
-plt.plot(w_batch[:,0], w_batch[:,1], 'g-', alpha=.75 )
-plt.plot(w_sto[:,0], w_sto[:,1], 'r-', alpha=.75 )
+plot_contour(lambda w0, w1: loss_contour(w0, w1, X, T), title='Loss Function - Gradient descent')
+plt.plot(w_batch[:,0], w_batch[:,1],
+         'g-',
+         label='batch, rate=%.2f' % batch_learning_rate,
+         alpha=.75 )
+plt.plot(w_sto[:,0], w_sto[:,1],
+         'r-',
+         label='stochastic, rate=%.2f' % stochastic_learning_rate,
+         alpha=.75 )
+plt.plot(W_theorical[0], W_theorical[1], 'b+', label='theorical')
+plt.xlabel("w0")
+plt.ylabel("w1")
+plt.legend()
 plt.show()
 
 plot_surface(lambda w0, w1: loss_contour(w0, w1, X, T), title='Loss Function')
