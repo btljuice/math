@@ -2,9 +2,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-from numpy import array
 from numpy import random, ones, zeros
-from numpy.matlib import repmat
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 from matplotlib import cm
@@ -13,7 +11,7 @@ from matplotlib import cm
 random.seed(42)
 
 # Global parameters
-W_theorical = array([ -.3, .5 ])
+W_theorical = np.array([ -.3, .5 ])
 noise_stdev = .25
 n_samples = 25
 x_dom = [0, 1]
@@ -33,7 +31,7 @@ def generate_noise(n):
 
 def generate_predictors(n):
     x = random.uniform(x_dom[0], x_dom[1], n)  # Between [0, 1]
-    return array([ones(n), x]).T
+    return np.array([ones(n), x]).T
 
 
 def generate_samples(n):
@@ -59,8 +57,20 @@ def loss_gradient(w, X, t):
     g = zeros(d)
     for i in range(n):
         x = X[i]
+        # TODO: Change x@w for model_func(w, x), model_func as a parameter
         g += float(x@w - t[i])*x
     return g
+
+
+def loss_hessian(w, X, T):
+    # Hessian for the sum of square errors
+    d = X.shape[1]
+    H = zeros([d, d])
+    for x in X:
+        H += np.outer(x,x)
+
+    return H
+
 
 
 def calc_meshgrid(f, x_range, y_range):
@@ -103,7 +113,7 @@ def plot_surface(f, x_range=None, y_range=None, title=''):
 
 
 def loss_contour(w0, w1, X, T):
-    W = array([w0.flatten(), w1.flatten()])
+    W = np.array([w0.flatten(), w1.flatten()])
     T_pred = model_predict(W, X)
     if T.ndim == 1:
         T = T[None].T
@@ -140,6 +150,32 @@ def gradient_descent(gradient_func, w0, learning_rate=1, epsilon=1e-3, max_ite=1
     return ret_w, ret_g
 
 
+# f d => 1 function
+# g
+def newton_raphson_descent(func, jacobian_func, x0, epsilon=1e-3, max_ite=1000):
+    ret_x = [ x0 ]
+    ret_y = [ func(x0) ]
+    for i in range(max_ite):
+        x = ret_x[-1]
+        y = ret_y[-1]
+        print(x, y)
+        J = jacobian_func(x)
+        J_inv = np.linalg.inv(J)
+        next_x = x - J_inv@y
+        next_y = func(next_x)
+        ret_x.append(next_x)
+        ret_y.append(next_y)
+
+        # TODO: Both convergence test could be enhanced
+        # 1st test: has w converged since last iteration
+        # 2nd test: is gradient close to 0
+        if    np.all(np.abs(x - next_x) <= epsilon) \
+           or np.all(np.abs(next_y) <= epsilon):
+            break
+
+    return np.array(ret_x), np.array(ret_y)
+
+
 class StochasticGradient:
     def __init__(self, X, t):
         self._X = X
@@ -171,7 +207,7 @@ X, T = generate_samples(n_samples)
 # Batch Gradient descent
 n = X.shape[0]
 d = X.shape[1]
-w0 = array([.9,.9])
+w0 = np.array([.9,.9])
 batch_learning_rate = .04  # Good values
 stochastic_learning_rate = .12  # Good values
 # batch_learning_rate = .07  # Bad values
@@ -185,9 +221,12 @@ w_sto, g_sto = gradient_descent(
     StochasticGradient(X, T),
     w0,
     learning_rate=stochastic_learning_rate,
-    max_ite=100000
+    max_ite=100000)
 
-)
+w_newton, g_newton = newton_raphson_descent(
+    lambda w: loss_gradient(w, X, T),
+    lambda w: loss_hessian(w, X, T),
+    w0)
 
 plot_contour(lambda w0, w1: loss_contour(w0, w1, X, T), title='Loss Function - Gradient descent')
 plt.plot(w_batch[:,0], w_batch[:,1],
@@ -198,6 +237,10 @@ plt.plot(w_sto[:,0], w_sto[:,1],
          'r-',
          label='stochastic, rate=%.2f' % stochastic_learning_rate,
          alpha=.75 )
+plt.plot(w_newton[:,0], w_newton[:,1],
+         'b-',
+         label='newton-raphson',
+         alpha=.75)
 plt.plot(W_theorical[0], W_theorical[1], 'b+', label='theorical')
 plt.xlabel("w0")
 plt.ylabel("w1")
